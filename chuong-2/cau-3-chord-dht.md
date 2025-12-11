@@ -1,351 +1,754 @@
-CHƯƠNG 2 - CÂU 3
-Đề bài:
-Trong vòng Chord với m = 5 và các nút hiện có {1, 4, 9, 11, 14, 18, 20, 21, 28}, hãy:
+# Câu 3: Chord DHT - Distributed Hash Table
 
-Xác định succ(7), succ(22) và succ(30).
-Giả sử node 9 thực hiện tra cứu key = 3, hãy mô tả chi tiết các bước chuyển tiếp yêu cầu qua các shortcut (theo hình 2.19) cho đến khi tìm được node chịu trách nhiệm.
+> **Chương:** 2 - Kiến trúc Hệ thống Phân tán  
+> **Độ khó:** ⭐⭐⭐⭐ (Khó)  
+> **Thời gian đọc:** ~25 phút
 
+---
 
-BÀI GIẢI:
-Phần 1: Kiến thức nền tảng về Chord DHT
-A. Chord Ring (Vòng Chord)
-Chord là một giao thức Distributed Hash Table (DHT) sử dụng consistent hashing để phân bổ dữ liệu trên các node trong mạng P2P.
-Thông số:
+## 📋 Mục lục
 
-m = 5: Số bit để định danh node và key
-Không gian địa chỉ: 0 đến 2^m - 1 = 2^5 - 1 = 31
-Tổng số vị trí có thể: 32 (từ 0 đến 31)
+- [Đề bài](#đề-bài)
+- [Phần 1: Cơ bản về Chord](#phần-1-cơ-bản-về-chord)
+- [Phần 2: Tính toán Successor](#phần-2-tính-toán-successor)
+- [Phần 3: Routing với Finger Table](#phần-3-routing-với-finger-table)
+- [Phần 4: Phân tích Hiệu năng](#phần-4-phân-tích-hiệu-năng)
+- [Tóm tắt](#tóm-tắt)
 
-Các node hiện có: {1, 4, 9, 11, 14, 18, 20, 21, 28}
-Biểu diễn vòng Chord:
-                    0/32
-                     │
-        28 ────────  │  ────────  1
-                    │
-       21 ─────────     ───────── 4
-                   │   │
-      20 ──────────     ────────── 9
-                  │     │
-     18 ─────────   Chord  ──────── 11
-                  │  Ring  │
-                 │         │
-                14 ─────────
-B. Hàm successor (succ)
-Định nghĩa: succ(k) là node đầu tiên có ID ≥ k khi đi theo chiều kim đồng hồ trên vòng Chord.
-Công thức:
-succ(k) = min{n ∈ nodes | n ≥ k} 
-          hoặc min{nodes} nếu k > max{nodes}
-Trách nhiệm của node:
+---
 
-Node n chịu trách nhiệm lưu trữ tất cả các key k thỏa mãn: pred(n) < k ≤ n
-pred(n): node đứng ngay trước n trên vòng
+## 📋 Đề bài
 
+Cho một hệ thống Chord DHT (Distributed Hash Table) với **m = 5** (không gian định danh 0–31).
 
-Phần 2: Xác định succ(7), succ(22), succ(30)
-Danh sách nodes sắp xếp: 1, 4, 9, 11, 14, 18, 20, 21, 28
+Các node hiện có trong ring: **{1, 4, 9, 11, 14, 18, 20, 21, 28}**
 
-CÂU 2.1: Xác định succ(7)
-Phân tích:
+**Yêu cầu:**
 
-Tìm node nhỏ nhất có ID ≥ 7
-Các node có ID ≥ 7: {9, 11, 14, 18, 20, 21, 28}
-Node nhỏ nhất trong số này: 9
+1. **Xác định successor** cho các keys:
+   - key = 7
+   - key = 22
+   - key = 30
 
-Kết quả:
-succ(7) = 9
-Giải thích chi tiết:
-Vòng Chord:
-... ─ 4 ─ [vị trí 5,6,7,8] ─ 9 ─ 11 ─ ...
+2. **Mô tả quá trình routing** khi node 9 tìm kiếm key = 3:
+   - Sử dụng finger table
+   - Liệt kê các bước nhảy (hops)
+   - Giải thích tại sao hiệu quả hơn routing tuần tự
+
+---
+
+## 💡 Bài giải
+
+### Phần 1: Cơ bản về Chord
+
+#### A. Không gian định danh
+```
+Chord Ring với m = 5:
+────────────────────────────────────────
+Identifier space: 0 to 2^m - 1
+                = 0 to 2^5 - 1
+                = 0 to 31
+
+Total identifiers: 32 (0, 1, 2, ..., 31)
+```
+
+#### B. Chord Ring Visualization
+```
+                        0/32
+                         •
+                    31 ╱   ╲ 1 ●
+                   ╱         ╲
+              30 ●           ● 2
+                 │           │
+             29  │           │  3
+                 │           │
+             28 ●│           │● 4
+                 │           │
+             27  │           │  5
+                 │           │
+             26  │           │  6
+                 │           │
+             25  │           │  7
+                 │           │
+             24  │           │  8
+                 │           │
+             23  │           │● 9
+                 │           │
+             22  │           │  10
+                ●│           │● 11
+            21   │           │
+                 │           │  12
+            20 ●─┘           └─  13
+                 ╲         ╱
+              19  ╲       ╱ 14 ●
+                18 ●─────● 15
+                    17 16
+
+Nodes present (●):
+{1, 4, 9, 11, 14, 18, 20, 21, 28}
+
+Total: 9 nodes out of 32 possible positions
+```
+
+#### C. Successor Definition
+
+**Định nghĩa:**
+```
+successor(k) = node n where:
+- n is the first node ≥ k in the ring
+- If no node ≥ k exists, wrap around to first node
+
+Formula:
+successor(k) = min{n ∈ Nodes | n ≥ k}
+             OR first node if no such n exists
+```
+
+**Tại sao quan trọng:**
+- Mỗi key được lưu tại node successor của nó
+- Đảm bảo mọi key đều có một "chủ nhân"
+- Khi node join/leave, chỉ cần di chuyển keys giữa successor và predecessor
+
+---
+
+### Phần 2: Tính toán Successor
+
+#### A. Key = 7
+```
+Question: successor(7) = ?
+
+Step 1: Tìm node đầu tiên ≥ 7
+────────────────────────────────────────
+Nodes: {1, 4, 9, 11, 14, 18, 20, 21, 28}
               ↑
-         Key 7 rơi vào đây
-         
-Node 9 là node đầu tiên >= 7 khi đi theo chiều kim đồng hồ
-→ Key 7 được lưu trữ tại node 9
-Các key mà node 9 chịu trách nhiệm:
-pred(9) = 4
-Node 9 lưu trữ: (4, 9] = {5, 6, 7, 8, 9}
+              9 is first node ≥ 7
 
-CÂU 2.2: Xác định succ(22)
-Phân tích:
+Answer: successor(7) = 9 ✅
+```
 
-Tìm node nhỏ nhất có ID ≥ 22
-Các node có ID ≥ 22: {28}
-Node nhỏ nhất: 28
+**Visualization:**
+```
+        7 (key position)
+         ↓
+    ... 6  7  8  9 ...
+            ↗ ↑
+      (no node) │
+                │
+           Node 9 (successor)
+```
 
-Kết quả:
-succ(22) = 28
-Giải thích chi tiết:
-Vòng Chord:
-... ─ 21 ─ [vị trí 22,23,24,25,26,27] ─ 28 ─ 1 ─ ...
-               ↑
-          Key 22 rơi vào đây
-          
-Node 28 là node đầu tiên >= 22
-→ Key 22 được lưu trữ tại node 28
-Các key mà node 28 chịu trách nhiệm:
-pred(28) = 21
-Node 28 lưu trữ: (21, 28] = {22, 23, 24, 25, 26, 27, 28}
+**Giải thích:**
+- Key 7 nằm giữa node 4 và node 9
+- Theo quy tắc: successor = first node ≥ key
+- Node 9 là node đầu tiên ≥ 7
+- Vậy key 7 được lưu tại **node 9**
 
-CÂU 2.3: Xác định succ(30)
-Phân tích:
+---
 
-Tìm node nhỏ nhất có ID ≥ 30
-Không có node nào có ID ≥ 30 (max node = 28)
-Vòng Chord là vòng tròn → quay lại đầu vòng
-Node đầu tiên trong vòng: 1
+#### B. Key = 22
+```
+Question: successor(22) = ?
 
-Kết quả:
-succ(30) = 1
-Giải thích chi tiết:
-Vòng Chord (hiển thị wrap-around):
-28 ─ [29, 30, 31, 0] ─ 1 ─ 4 ─ ...
-         ↑
-    Key 30 rơi vào đây
+Step 1: Tìm node đầu tiên ≥ 22
+────────────────────────────────────────
+Nodes: {1, 4, 9, 11, 14, 18, 20, 21, 28}
+                                    ↑
+                              28 is first node ≥ 22
+
+Answer: successor(22) = 28 ✅
+```
+
+**Visualization:**
+```
+    20  21  22  23  24  25  26  27  28
+     ●   ●   ↑                       ●
+             │                       ↑
+        key 22              successor(22) = 28
+```
+
+**Giải thích:**
+- Key 22 nằm giữa node 21 và node 28
+- Node đầu tiên ≥ 22 là node 28
+- Vậy key 22 được lưu tại **node 28**
+
+---
+
+#### C. Key = 30
+```
+Question: successor(30) = ?
+
+Step 1: Tìm node đầu tiên ≥ 30
+────────────────────────────────────────
+Nodes: {1, 4, 9, 11, 14, 18, 20, 21, 28}
+                                    ↑
+                    28 < 30 (không thỏa)
+
+Step 2: Không có node ≥ 30
+→ Wrap around to first node
+
+Answer: successor(30) = 1 ✅
+```
+
+**Visualization (Ring wrap-around):**
+```
+             0/32
+              ●
+         31 ╱   ╲ 1 ●  ← successor(30)
+        ╱         ╲
+    30 ●           ● 2
+     ↑ (key)
     
-Không có node >= 30 trong [0, 31]
-→ Quay vòng lại: succ(30) = node đầu tiên = 1
-Các key mà node 1 chịu trách nhiệm:
-pred(1) = 28
-Node 1 lưu trữ: (28, 1] = {29, 30, 31, 0, 1}
-(31 + 1 = 0 mod 32, vòng quay lại)
+No node between 30 and 32
+→ Wrap to first node = 1
+```
 
-Tóm tắt Phần 1:
-KeySuccessorNode chịu trách nhiệmGiải thích79Node 9Node đầu tiên >= 72228Node 28Node đầu tiên >= 22301Node 1Wrap-around, quay lại đầu vòng
+**Giải thích:**
+- Key 30 > tất cả nodes hiện có (max = 28)
+- Theo quy tắc wrap-around của ring
+- Successor = node đầu tiên trong ring
+- Vậy key 30 được lưu tại **node 1**
 
-Phần 3: Finger Table và Routing trong Chord
-A. Khái niệm Finger Table
-Mỗi node n duy trì một finger table với m entries (m = 5 → 5 entries).
-Entry thứ i (i = 0, 1, 2, ..., m-1):
-finger[i].start = (n + 2^i) mod 2^m
-finger[i].node = succ(finger[i].start)
-Mục đích:
+---
 
-Tăng tốc độ routing từ O(N) xuống O(log N)
-Mỗi finger "nhảy" một khoảng cách tăng theo lũy thừa 2
+#### D. Summary Table
+```
+╔═══════════════════════════════════════════╗
+║         SUCCESSOR CALCULATIONS            ║
+╠═══════════════════════════════════════════╣
+║                                           ║
+║  Key │ Successor │ Explanation           ║
+║ ═════╪═══════════╪═════════════════════  ║
+║      │           │                       ║
+║   7  │     9     │ First node ≥ 7       ║
+║      │           │ 7 ∈ (4, 9]           ║
+║      │           │                       ║
+║  22  │    28     │ First node ≥ 22      ║
+║      │           │ 22 ∈ (21, 28]        ║
+║      │           │                       ║
+║  30  │     1     │ No node ≥ 30         ║
+║      │           │ Wrap to first node   ║
+║      │           │ 30 ∈ (28, 1]         ║
+║      │           │                       ║
+╚═══════════════════════════════════════════╝
+```
 
+---
 
-B. Xây dựng Finger Table cho Node 9
-Node 9 với m = 5:
-ifinger[i].start = (9 + 2^i) mod 32finger[i].intervalfinger[i].node = succ(start)0(9 + 2^0) mod 32 = 10[10, 11)succ(10) = 111(9 + 2^1) mod 32 = 11[11, 13)succ(11) = 112(9 + 2^2) mod 32 = 13[13, 17)succ(13) = 143(9 + 2^3) mod 32 = 17[17, 25)succ(17) = 184(9 + 2^4) mod 32 = 25[25, 9)succ(25) = 28
-Finger Table của Node 9:
+### Phần 3: Routing với Finger Table
+
+#### A. Finger Table của Node 9
+
+**Công thức finger table:**
+```
+For node n with m-bit identifier:
+finger[i] = successor(n + 2^i)  where i ∈ [0, m-1]
+
+For node 9 (m = 5):
+finger[0] = successor(9 + 2^0) = successor(10)
+finger[1] = successor(9 + 2^1) = successor(11)
+finger[2] = successor(9 + 2^2) = successor(13)
+finger[3] = successor(9 + 2^3) = successor(17)
+finger[4] = successor(9 + 2^4) = successor(25)
+```
+
+**Tính toán từng entry:**
+```
 Node 9 Finger Table:
-┌───┬───────┬──────────────┬──────┐
-│ i │ start │  interval    │ node │
-├───┼───────┼──────────────┼──────┤
-│ 0 │  10   │  [10, 11)    │  11  │
-│ 1 │  11   │  [11, 13)    │  11  │
-│ 2 │  13   │  [13, 17)    │  14  │
-│ 3 │  17   │  [17, 25)    │  18  │
-│ 4 │  25   │  [25, 9)     │  28  │
-└───┴───────┴──────────────┴──────┘
-Giải thích:
+═══════════════════════════════════════════════
 
-Finger 0: Nhảy +1 → node 11 (gần nhất)
-Finger 1: Nhảy +2 → vẫn node 11
-Finger 2: Nhảy +4 → node 14
-Finger 3: Nhảy +8 → node 18
-Finger 4: Nhảy +16 → node 28 (xa nhất)
+finger[0] = successor(9 + 1) = successor(10)
+Nodes: {1, 4, 9, 11, 14, 18, 20, 21, 28}
+                    ↑
+First node ≥ 10 = 11
+finger[0] = 11
 
+────────────────────────────────────────────────
 
-Phần 4: Tra cứu key = 3 từ node 9
-CÂU 2.2: Mô tả chi tiết các bước routing
-Mục tiêu: Node 9 cần tìm node chịu trách nhiệm cho key = 3
-Bước chuẩn bị:
+finger[1] = successor(9 + 2) = successor(11)
+First node ≥ 11 = 11
+finger[1] = 11
 
-Xác định node chịu trách nhiệm key = 3:
+────────────────────────────────────────────────
 
-   succ(3) = 4
-   → Node 4 chịu trách nhiệm lưu trữ key 3
+finger[2] = successor(9 + 4) = successor(13)
+First node ≥ 13 = 14
+finger[2] = 14
 
-Thuật toán routing:
+────────────────────────────────────────────────
 
-   Từ node n, để tìm key k:
-   - Nếu k ∈ (n, successor(n)]: Trả về successor(n)
-   - Ngược lại: Tìm node n' trong finger table sao cho:
-     n' là node xa nhất mà vẫn < k
-     → Forward request đến n'
+finger[3] = successor(9 + 8) = successor(17)
+First node ≥ 17 = 18
+finger[3] = 18
 
-BƯỚC 1: Node 9 xử lý request
-Kiểm tra:
+────────────────────────────────────────────────
+
+finger[4] = successor(9 + 16) = successor(25)
+First node ≥ 25 = 28
+finger[4] = 28
+```
+
+**Finger Table hoàn chỉnh:**
+```
+╔═══════════════════════════════════════════════╗
+║       NODE 9 FINGER TABLE                     ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  i │ start │ interval    │ successor │ node  ║
+║ ═══╪═══════╪═════════════╪═══════════╪══════ ║
+║    │       │             │           │       ║
+║  0 │  10   │ [10, 11)    │    11     │  11   ║
+║  1 │  11   │ [11, 13)    │    11     │  11   ║
+║  2 │  13   │ [13, 17)    │    14     │  14   ║
+║  3 │  17   │ [17, 25)    │    18     │  18   ║
+║  4 │  25   │ [25, 9)     │    28     │  28   ║
+║    │       │             │           │       ║
+╚═══════════════════════════════════════════════╝
+
+Coverage visualization:
+0──────────────────────────────31
+   │ │    │        │            │
+   11 14   18       28          (wraps to 9)
+   ↑  ↑    ↑        ↑
+  2^0 2^2  2^3      2^4 distance from node 9
+```
+
+---
+
+#### B. Routing: Node 9 tìm Key = 3
+
+**Algorithm:**
+```python
+def find_successor(node, key):
+    """
+    Find successor of key starting from node
+    """
+    if key in (node, node.successor]:
+        return node.successor
+    else:
+        # Find closest preceding node in finger table
+        n0 = closest_preceding_node(node, key)
+        return n0.find_successor(key)
+
+def closest_preceding_node(node, key):
+    """
+    Return closest finger that precedes key
+    """
+    for i in range(m-1, -1, -1):  # Check from largest to smallest
+        if node.finger[i] in (node, key):
+            return node.finger[i]
+    return node
+```
+
+**Step-by-step routing:**
+```
+═══════════════════════════════════════════════
+STEP 0: Node 9 wants to find key = 3
+═══════════════════════════════════════════════
+
 Current node: 9
 Target key: 3
-Successor của node 9: succ(9) = 11
+Question: Is key ∈ (9, successor(9)]?
 
-Kiểm tra: key 3 có thuộc (9, 11] không?
-→ KHÔNG (vì 3 < 9, cần wrap-around)
-Tìm node tiếp theo trong finger table:
-Finger Table của Node 9:
-- finger[0].node = 11 (> 3? Có → Không hợp lệ)
-- finger[1].node = 11 (> 3? Có → Không hợp lệ)
-- finger[2].node = 14 (> 3? Có → Không hợp lệ)
-- finger[3].node = 18 (> 3? Có → Không hợp lệ)
-- finger[4].node = 28 (> 3? Có → ???)
-Lưu ý về wrap-around:
-Trên vòng Chord, từ node 9 đến key 3:
-9 → 11 → ... → 28 → 1 → 4 (key 3 nằm ở đây)
+Calculate successor(9):
+- From finger[0] = 11
+- So key ∈ (9, 11]?
+- 3 ∈ (9, 11]? NO (3 < 9)
 
-Do key 3 < 9, ta cần đi "vòng qua" 0
-Node 28 là node lớn nhất < 32, gần với đích nhất
-Quyết định:
-Forward request đến finger[4].node = 28
-(Node 28 là node xa nhất theo chiều dương)
-Action:
-Node 9 gửi: lookup(key=3) → Node 28
+Action: Forward to closest preceding finger
+```
+```
+═══════════════════════════════════════════════
+STEP 1: Check finger table of node 9
+═══════════════════════════════════════════════
 
-BƯỚC 2: Node 28 xử lý request
-Xây dựng Finger Table cho Node 28:
-ifinger[i].start = (28 + 2^i) mod 32finger[i].node = succ(start)0(28 + 1) mod 32 = 29succ(29) = 11(28 + 2) mod 32 = 30succ(30) = 12(28 + 4) mod 32 = 0succ(0) = 13(28 + 8) mod 32 = 4succ(4) = 44(28 + 16) mod 32 = 12succ(12) = 14
-Node 28 Finger Table:
-┌───┬───────┬──────────────┬──────┐
-│ i │ start │  interval    │ node │
-├───┼───────┼──────────────┼──────┤
-│ 0 │  29   │  [29, 30)    │  1   │
-│ 1 │  30   │  [30, 0)     │  1   │
-│ 2 │   0   │  [0, 4)      │  1   │
-│ 3 │   4   │  [4, 12)     │  4   │
-│ 4 │  12   │  [12, 28)    │  14  │
-└───┴───────┴──────────────┴──────┘
-Kiểm tra:
+Node 9 finger table: {11, 11, 14, 18, 28}
+
+Question: Which finger is closest to key=3 but doesn't overshoot?
+
+Check fingers from largest to smallest:
+- finger[4] = 28: Is 28 in (9, 3)? YES ✅
+  (Circular: 9 → 28 → 0 → 3)
+
+Decision: Forward to node 28
+```
+```
+═══════════════════════════════════════════════
+STEP 2: Node 28 receives query for key = 3
+═══════════════════════════════════════════════
+
 Current node: 28
 Target key: 3
-Successor của node 28: succ(28) = 1
+Question: Is key ∈ (28, successor(28)]?
 
-Kiểm tra: key 3 có thuộc (28, 1] không?
-→ (28, 1] = {29, 30, 31, 0, 1} (wrap-around)
-→ KHÔNG (3 không nằm trong khoảng này)
-Tìm node tiếp theo:
-Tìm node n' trong finger table sao cho n' là node lớn nhất mà < 3
-(hoặc node gần key 3 nhất mà không vượt qua nó)
+Calculate successor(28):
+Nodes after 28: {28, ..., 0, 1, 4, ...}
+- Wrap around: successor(28) = 1
+- Is 3 ∈ (28, 1]? 
+- Circular: 28 → 29 → 30 → 31 → 0 → 1
+- 3 > 1, so NO
 
-Xét các fingers:
-- finger[0].node = 1 (< 3? Có ✓)
-- finger[1].node = 1 (< 3? Có ✓)
-- finger[2].node = 1 (< 3? Có ✓)
-- finger[3].node = 4 (< 3? Không ✗, 4 > 3)
-- finger[4].node = 14 (< 3? Không ✗)
+Check finger table of node 28:
+finger[0] = successor(29) = 1
+- Is 1 in (28, 3)? YES ✅
 
-Node 1 là lựa chọn tốt nhất (gần nhất mà < 3)
-Action:
-Node 28 gửi: lookup(key=3) → Node 1
+Decision: Forward to node 1
+```
+```
+═══════════════════════════════════════════════
+STEP 3: Node 1 receives query for key = 3
+═══════════════════════════════════════════════
 
-BƯỚC 3: Node 1 xử lý request
-Xây dựng Finger Table cho Node 1:
-ifinger[i].start = (1 + 2^i) mod 32finger[i].node = succ(start)0(1 + 1) mod 32 = 2succ(2) = 41(1 + 2) mod 32 = 3succ(3) = 42(1 + 4) mod 32 = 5succ(5) = 93(1 + 8) mod 32 = 9succ(9) = 94(1 + 16) mod 32 = 17succ(17) = 18
-Node 1 Finger Table:
-┌───┬───────┬──────────────┬──────┐
-│ i │ start │  interval    │ node │
-├───┼───────┼──────────────┼──────┤
-│ 0 │   2   │  [2, 3)      │  4   │
-│ 1 │   3   │  [3, 5)      │  4   │
-│ 2 │   5   │  [5, 9)      │  9   │
-│ 3 │   9   │  [9, 17)     │  9   │
-│ 4 │  17   │  [17, 1)     │  18  │
-└───┴───────┴──────────────┴──────┘
-Kiểm tra:
 Current node: 1
 Target key: 3
-Successor của node 1: succ(1) = 4
+Question: Is key ∈ (1, successor(1)]?
 
-Kiểm tra: key 3 có thuộc (1, 4] không?
-→ (1, 4] = {2, 3, 4}
-→ CÓ! Key 3 nằm trong khoảng này
-Kết luận:
-Node 1 xác định: succ(3) = 4
-→ Node 4 chịu trách nhiệm key 3
-Action:
-Node 1 gửi: lookup(key=3) → Node 4 (final destination)
+Calculate successor(1):
+- Next node after 1 = 4
+- Is 3 ∈ (1, 4]? YES ✅
 
-BƯỚC 4: Node 4 trả về kết quả
-Node 4 nhận request lookup(key=3)
-Node 4 kiểm tra: pred(4) = 1
-Key 3 thuộc (1, 4] → Node 4 chịu trách nhiệm
+Action: Forward to successor = node 4
+```
+```
+═══════════════════════════════════════════════
+STEP 4: Node 4 returns result
+═══════════════════════════════════════════════
 
-Node 4 thực hiện:
-1. Tra cứu key 3 trong local storage
-2. Trả về dữ liệu (hoặc NOT_FOUND nếu không có)
-Response path:
-Node 4 → Node 1 → Node 28 → Node 9 (original requester)
+Node 4 is responsible for key = 3
+(because 3 ∈ (1, 4])
 
-Phần 5: Tóm tắt và phân tích
-Tổng kết routing path:
-┌────────────────────────────────────────────────────────────┐
-│  ROUTING PATH: Node 9 tìm key = 3                         │
-└────────────────────────────────────────────────────────────┘
+Return: "Node 4 has key 3"
+```
 
-Bước 1: Node 9 (start)
-        ├─ Check: key 3 ∈ (9, 11]? → NO
-        ├─ Lookup finger table
-        └─ Forward to: Node 28 (finger[4], nhảy +16)
-        
-Bước 2: Node 28
-        ├─ Check: key 3 ∈ (28, 1]? → NO
-        ├─ Lookup finger table
-        └─ Forward to: Node 1 (finger[0], nhảy +1)
-        
-Bước 3: Node 1
-        ├─ Check: key 3 ∈ (1, 4]? → YES!
-        └─ Forward to: Node 4 (successor)
-        
-Bước 4: Node 4 (destination)
-        └─ Return data for key 3
+**Complete Routing Path:**
+```
+┌─────────────────────────────────────────────┐
+│  ROUTING SUMMARY                            │
+├─────────────────────────────────────────────┤
+│                                             │
+│  Hop 1: Node 9  → Query key 3              │
+│         ├─ Check finger table               │
+│         └─ Forward to finger[4] = 28        │
+│         (Jump: +19 positions)               │
+│                                             │
+│  Hop 2: Node 28 → Receive query            │
+│         ├─ Check finger table               │
+│         └─ Forward to finger[0] = 1         │
+│         (Jump: wrap around, +5 positions)   │
+│                                             │
+│  Hop 3: Node 1  → Receive query            │
+│         ├─ Check: 3 ∈ (1, 4]? YES          │
+│         └─ Forward to successor = 4         │
+│         (Jump: +3 positions)                │
+│                                             │
+│  Hop 4: Node 4  → Return data              │
+│         └─ Key 3 found! ✅                  │
+│                                             │
+├─────────────────────────────────────────────┤
+│  Total hops: 3 (9 → 28 → 1 → 4)           │
+│  Total nodes contacted: 4                   │
+└─────────────────────────────────────────────┘
+```
 
-TOTAL HOPS: 3 hops (9 → 28 → 1 → 4)
+**Visual Representation:**
+```
+             Ring (0-31)
+                 
+    0 ●─────────────────────● 16
+      │                     │
+      │   ┌─────────────┐  │
+      │   │   TARGET    │  │
+    1 ●   │   key = 3   │  │
+      │   └──────↑──────┘  │
+      │          │          │
+    4 ●──────────┘          │
+      │ ↑                   │
+      │ └── HOP 3           │
+    8 │     (from 1)        │
+      │                     │
+    9 ●◄────┐               │
+      │ START│              │
+      │      │              │
+   11 │      │              │
+      │      │              │
+   14 │      │              │
+      │      │              │
+   18 │      │              │
+      │      │              │
+   20 │      │              │
+   21 │      │              │
+      │      │              │
+   28 ●◄─────┘              │
+      │  HOP 1               │
+      │  (jump +19)         │
+   31 │                     │
+      │                     │
+    0 └─────────────────────┘
 
-Sơ đồ trực quan:
-        Chord Ring (m=5, N=32)
-        
-    0/32
-     │
- 28 ─┼─ 1  ←─── Bước 3: Check (1,4], tìm thấy!
-     │   │              Forward to 4
-     │   4  ←─── Bước 4: Đích cuối cùng (key=3)
-     │   
- 21─ │
-     │   9  ←─── Bước 1: Start here
- 20─ │            Forward to 28 (big jump)
-     │   11
- 18─ │   
-     │   14
+Path: 9 → 28 → 1 → 4
+Distance: 3 hops ✅
+```
 
-Path: 9 ──(+19)──> 28 ──(+5)──> 1 ──(+3)──> 4
+---
 
-Phân tích hiệu năng:
-1. Độ phức tạp routing:
-- Không có finger table: O(N) = 9 hops
-  (phải đi qua tất cả 9 nodes: 9→11→14→18→20→21→28→1→4)
-  
-- Với finger table: O(log N) = 3 hops
-  (nhảy theo lũy thừa 2: 9→28→1→4)
-2. Khoảng cách tối ưu:
-Từ node 9 đến node 4:
-- Khoảng cách trực tiếp: |4 - 9| = 5 (hoặc 27 theo chiều ngược)
-- Thực tế trên vòng: 9 → 11 → ... → 28 → 1 → 4
+#### C. Tại sao hiệu quả hơn routing tuần tự?
 
-Finger table cho phép:
-- Bước 1: Nhảy +19 (9→28) - Big jump
-- Bước 2: Nhảy +5 (28→1) - Medium jump
-- Bước 3: Nhảy +3 (1→4) - Small jump
+**Comparison:**
+```
+╔═══════════════════════════════════════════════╗
+║     SEQUENTIAL vs FINGER TABLE ROUTING        ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  Method          │ Hops │ Nodes   │ Time     ║
+║                  │      │ Visited │          ║
+║ ═════════════════╪══════╪═════════╪═════════ ║
+║                                               ║
+║  Sequential      │  9   │   10    │ O(N)     ║
+║  (ask next node) │      │         │          ║
+║                  │      │         │          ║
+║  Finger Table    │  3   │    4    │ O(log N) ║
+║  (smart jumps)   │      │         │          ║
+║                  │      │         │          ║
+║  Improvement     │ 3x   │  2.5x   │ ✅       ║
+║                                               ║
+╚═══════════════════════════════════════════════╝
+```
 
-→ Hiệu quả gấp 3 lần!
-3. Lợi ích của finger table:
-✅ Giảm số hops từ O(N) xuống O(log N)
-✅ Mỗi hop "hẹp dần" khoảng cách với target
-✅ Self-stabilizing: tự động điều chỉnh khi node join/leave
+**Sequential Routing (Baseline):**
+```
+Node 9 → Node 11 → Node 14 → Node 18 → 
+Node 20 → Node 21 → Node 28 → Node 1 → Node 4
 
-So sánh với các phương pháp khác:
-Phương phápHopsComplexityBộ nhớLinear search9O(N)O(1) - chỉ cần biết successorChord với finger table3O(log N)O(m log N) = O(log² N)Flooding (P2P không cấu trúc)All nodesO(N)O(1) nhưng broadcast storm
+Total: 9 hops ❌
+```
 
-Kết luận:
-Chord DHT với finger table cung cấp:
+**Finger Table Routing (Optimized):**
+```
+Node 9 → Node 28 → Node 1 → Node 4
 
-Routing hiệu quả: O(log N) hops
-Decentralized: Không cần server trung tâm
-Scalable: Thêm/bớt node không ảnh hưởng performance nhiều
-Load balanced: Keys phân bố đều nhờ consistent hashing
+Total: 3 hops ✅ (3x faster!)
+```
 
-Trong ví dụ này:
+**Why Finger Table is Better:**
 
-succ(7) = 9: Node 9 chịu trách nhiệm key 7
-succ(22) = 28: Node 28 chịu trách nhiệm key 22
-succ(30) = 1: Node 1 chịu trách nhiệm key 30 (wrap-around)
-Routing từ node 9 đến key 3: 3 hops (9 → 28 → 1 → 4)
+1. **Exponential Coverage**
+```
+   From node n, finger table covers:
+   - finger[0]: n + 1     (next node)
+   - finger[1]: n + 2     (skip 1)
+   - finger[2]: n + 4     (skip 3)
+   - finger[3]: n + 8     (skip 7)
+   - finger[4]: n + 16    (skip 15)
+   
+   Each finger doubles the distance!
+```
+
+2. **Binary Search-like**
+```
+   Similar to binary search in sorted array:
+   - Don't check every element
+   - Jump to middle, then half of half
+   - O(log N) complexity ✅
+```
+
+3. **Scalability**
+```
+   Number of nodes: 32    1024    1M      1B
+   ─────────────────────────────────────────────
+   Sequential:       32    1024    1M      1B ❌
+   Finger table:      5      10    20      30 ✅
+   
+   Improvement:      6x    100x   50Kx    33Mx 🚀
+```
+
+---
+
+### Phần 4: Phân tích Hiệu năng
+
+#### A. Complexity Analysis
+```
+╔═══════════════════════════════════════════════╗
+║          CHORD PERFORMANCE ANALYSIS           ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  Operation       │ Complexity │ Notes         ║
+║ ═════════════════╪════════════╪═════════════  ║
+║                                               ║
+║  Lookup          │ O(log N)   │ Using fingers ║
+║  Insert key      │ O(log N)   │ Find + store  ║
+║  Delete key      │ O(log N)   │ Find + remove ║
+║                                               ║
+║  Node join       │ O(log² N)  │ Update tables ║
+║  Node leave      │ O(log² N)  │ Transfer keys ║
+║                                               ║
+║  Storage per node│ O(log N)   │ Finger table  ║
+║  Messages/lookup │ O(log N)   │ Hop count     ║
+║                                               ║
+╚═══════════════════════════════════════════════╝
+```
+
+**Proof of O(log N) lookup:**
+```
+Theorem: Any lookup requires at most log₂(N) hops
+
+Proof:
+1. Identifier space: [0, 2^m - 1]
+2. Finger table has m entries
+3. Each finger[i] covers distance 2^i
+
+At each hop:
+- Distance to target is halved (at least)
+- Similar to binary search
+
+Example with N = 32 (m = 5):
+- Worst case: 5 hops
+- log₂(32) = 5 ✅
+
+Example with N = 1024 (m = 10):
+- Worst case: 10 hops
+- log₂(1024) = 10 ✅
+```
+
+#### B. Load Balancing
+```
+Keys distribution (with N=9 nodes, M=32 keys):
+
+Node  │ Range        │ Keys    │ Load
+──────┼──────────────┼─────────┼──────
+  1   │ (28, 1]      │ 4 keys  │ 12.5%
+  4   │ (1, 4]       │ 3 keys  │  9.4%
+  9   │ (4, 9]       │ 5 keys  │ 15.6%
+ 11   │ (9, 11]      │ 2 keys  │  6.3%
+ 14   │ (11, 14]     │ 3 keys  │  9.4%
+ 18   │ (14, 18]     │ 4 keys  │ 12.5%
+ 20   │ (18, 20]     │ 2 keys  │  6.3%
+ 21   │ (20, 21]     │ 1 key   │  3.1%
+ 28   │ (21, 28]     │ 7 keys  │ 21.9%
+
+Average: 3.56 keys/node
+Max: 7 keys (node 28)
+Min: 1 key (node 21)
+Variance: Moderate
+
+With consistent hashing:
+- Load is roughly balanced ✅
+- Adding node redistributes ~1/N keys
+- Removing node affects only successor
+```
+
+#### C. Fault Tolerance
+```
+Scenario: Node 28 fails
+
+Impact:
+1. Keys stored at node 28:
+   - Range (21, 28]
+   - 7 keys affected
+   - Transferred to successor(28) = node 1
+
+2. Finger tables pointing to 28:
+   - Node 9: finger[4] = 28 → Update to 1
+   - Node 11: finger[4] = 28 → Update to 1
+   - Node 14: finger[3] = 28 → Update to 1
+   - Node 18: finger[3] = 28 → Update to 1
+   - Node 20: finger[2] = 28 → Update to 1
+
+3. Successor pointers:
+   - Node 21: successor = 28 → Update to 1
+
+Recovery:
+✅ Keys not lost (stored at successor)
+✅ Finger tables updated lazily
+✅ System continues operating
+⚠️ Temporary performance degradation
+
+Chord's stabilization protocol:
+- Nodes periodically check successors
+- Fix finger tables incrementally
+- Recover to optimal state in O(N log N) time
+```
+
+---
+
+## 📊 Tóm tắt
+
+### Key Points
+
+- ✅ **Chord DHT**: Distributed hash table with O(log N) lookup
+- ✅ **Successor function**: First node ≥ key (with wrap-around)
+- ✅ **Finger table**: m entries covering exponential distances
+- ✅ **Routing**: Binary-search-like, 3 hops vs 9 sequential
+- ✅ **Scalability**: Handles 1 billion nodes with 30 hops max
+
+### Kết quả bài toán
+```
+╔═══════════════════════════════════════════╗
+║            ANSWERS SUMMARY                ║
+╠═══════════════════════════════════════════╣
+║                                           ║
+║  1. Successor calculations:               ║
+║     ├─ successor(7)  = 9                 ║
+║     ├─ successor(22) = 28                ║
+║     └─ successor(30) = 1 (wrap-around)   ║
+║                                           ║
+║  2. Routing (node 9 → key 3):            ║
+║     ├─ Hop 1: 9  → 28 (finger[4])       ║
+║     ├─ Hop 2: 28 → 1  (finger[0])       ║
+║     ├─ Hop 3: 1  → 4  (successor)       ║
+║     └─ Total: 3 hops (vs 9 sequential)   ║
+║                                           ║
+║  3. Efficiency:                           ║
+║     ├─ Finger table: O(log N)            ║
+║     ├─ Sequential: O(N)                  ║
+║     └─ Improvement: 3x for N=9           ║
+║                     50,000x for N=1M 🚀  ║
+║                                           ║
+╚═══════════════════════════════════════════╝
+```
+
+### Trade-offs
+
+**Advantages:**
+- ✅ Logarithmic lookup time
+- ✅ Scalable to millions of nodes
+- ✅ Fault tolerant (successor backup)
+- ✅ Load balanced (consistent hashing)
+- ✅ Decentralized (no single point of failure)
+
+**Disadvantages:**
+- ⚠️ Churn handling (nodes join/leave frequently)
+- ⚠️ Finger table maintenance overhead
+- ⚠️ Not optimal for range queries
+- ⚠️ Network latency not considered (logical routing)
+
+### Applications
+
+- **BitTorrent DHT**: Peer discovery
+- **Amazon Dynamo**: Key-value store
+- **IPFS**: Content addressing
+- **Bitcoin**: Peer network (similar concept)
+- **Cassandra**: Distributed database (ring topology)
+
+---
+
+## 🔗 Tài liệu tham khảo
+
+### Papers
+- **"Chord: A Scalable Peer-to-peer Lookup Service"** - Stoica et al., SIGCOMM 2001
+- **"Consistent Hashing and Random Trees"** - Karger et al., 1997
+
+### Books
+- **Distributed Systems** - Tanenbaum & Van Steen (Chapter 5)
+- **Designing Data-Intensive Applications** - Kleppmann (Chapter 6)
+
+### Online Resources
+- [Chord Visualization](https://www.pdl.cmu.edu/Chord/)
+- [MIT 6.824 Lecture Notes](https://pdos.csail.mit.edu/6.824/)
+
+---
+
+## 🧭 Navigation
+
+**[⬅️ Câu 2: Kiến trúc 3 tầng](./cau-2-kien-truc-3-tang.md)** | **[📚 Quay lại Chương 2](./README.md)** | **[➡️ Câu 4: P2P Flooding](./cau-4-p2p-flooding.md)**
+
+---
+
+*Cập nhật lần cuối: 11/12/2025*
