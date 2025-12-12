@@ -2,7 +2,7 @@
 
 > **Chương:** 3 - Tiến trình và Ảo hóa  
 > **Độ khó:** ⭐⭐⭐⭐ (Khó)  
-> **Thời gian đọc:** ~25 phút
+> **Thời gian đọc:** ~30 phút
 
 ---
 
@@ -576,3 +576,211 @@ Conclusion:
 ```
 
 **2. PaaS (Platform-as-a-Service)**
+```
+╔═══════════════════════════════════════════════╗
+║     PaaS: CONTAINER-BASED (RECOMMENDED) ✅    ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  Requirements:                                ║
+║  ├─ Fast deployment (<1 second) ✅            ║
+║  ├─ High density (1000s per server) ✅        ║
+║  ├─ Auto-scaling (rapid) ✅                   ║
+║  ├─ Cost efficiency ✅                        ║
+║  └─ Developer doesn't care about OS           ║
+║                                               ║
+║  Why Container (not VM):                      ║
+║  ✅ 15× smaller (100 MB vs 1.5 GB)           ║
+║  ✅ 60× faster startup (<1s vs 60s)          ║
+║  ✅ 10× higher density (1706 vs 176/server)  ║
+║  ✅ 10× lower cost                            ║
+║                                               ║
+║  Performance:                                 ║
+║  ┌─────────────────────────────────────────┐ ║
+║  │             Native: 100%                 │ ║
+║  │         Container: 99-100% ✅            │ ║
+║  │               VM: 95-98%                 │ ║
+║  └─────────────────────────────────────────┘ ║
+║                                               ║
+║  Examples:                                    ║
+║  - Heroku ✅                                  ║
+║  - Google App Engine ✅                       ║
+║  - Cloud Foundry ✅                           ║
+║                                               ║
+╚═══════════════════════════════════════════════╝
+```
+
+#### C. Density Comparison
+```python
+# Calculate max instances per 256GB server
+
+def max_vms(ram_per_vm_gb, total_ram_gb=256):
+    """VMs need full OS"""
+    return int(total_ram_gb / ram_per_vm_gb)
+
+def max_containers(ram_per_container_mb, total_ram_gb=256):
+    """Containers share OS"""
+    total_ram_mb = total_ram_gb * 1024
+    return int(total_ram_mb / ram_per_container_mb)
+
+# VMs
+vm_ram = 1.5  # GB (OS + App)
+max_vms_count = max_vms(vm_ram)
+
+# Containers
+container_ram = 150  # MB (App only)
+max_containers_count = max_containers(container_ram)
+
+print(f"256 GB Server:")
+print(f"  Max VMs: {max_vms_count}")
+print(f"  Max Containers: {max_containers_count}")
+print(f"  Container advantage: {max_containers_count/max_vms_count:.1f}× ✅")
+```
+
+**Output:**
+```
+256 GB Server:
+  Max VMs: 176
+  Max Containers: 1,706 ✅
+  Container advantage: 9.7× ✅ (10× more dense!)
+```
+
+#### D. Security Trade-offs
+```
+╔═══════════════════════════════════════════════════════╗
+║          SECURITY: VM vs CONTAINER                    ║
+╠═══════════════════════════════════════════════════════╣
+║                                                       ║
+║  Attack Surface     │ VM              │ Container     ║
+║ ════════════════════╪═════════════════╪══════════════ ║
+║                                                       ║
+║  Isolation level    │ Hardware ✅✅    │ OS-level ⚠️  ║
+║                     │ (strong)        │ (weaker)      ║
+║                                                       ║
+║  Kernel exploit     │ Contained ✅     │ Affects all ❌║
+║                     │ (separate OS)   │ (shared)      ║
+║                                                       ║
+║  Escape difficulty  │ Very hard ✅     │ Possible ⚠️   ║
+║                     │                 │ (CVEs exist)  ║
+║                                                       ║
+║  Multi-tenancy      │ Safe ✅         │ Risky ⚠️      ║
+║  (untrusted users)  │                 │ (mitigations) ║
+║                                                       ║
+║  Compliance         │ Easier ✅       │ Harder ⚠️     ║
+║  (regulations)      │ (PCI DSS, HIPAA)│              ║
+║                                                       ║
+╚═══════════════════════════════════════════════════════╝
+
+Solutions for container security:
+✅ gVisor (lightweight VM for containers)
+✅ Kata Containers (VM-like isolation)
+✅ Firecracker (AWS Lambda's approach)
+```
+
+---
+
+## 📊 Tóm tắt
+
+### Key Points
+
+- ✅ **Type 1 (Bare-metal)**: 95-98% perf, production-grade, expensive
+- ✅ **Type 2 (Hosted)**: 80-90% perf, easy to use, dev/test only
+- ✅ **Device drivers**: Type 1 custom, Type 2 reuses host OS ✅
+- ✅ **IaaS**: VM-based (customer needs OS control)
+- ✅ **PaaS**: Container-based (10× density, 60× faster startup)
+
+### Decision Matrix
+```
+╔═══════════════════════════════════════════════╗
+║         HYPERVISOR SELECTION GUIDE            ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  Scenario              │ Best Choice         ║
+║ ═══════════════════════╪════════════════════ ║
+║                                               ║
+║  Production datacenter │ Type 1 ✅           ║
+║  (performance critical)│ (ESXi, KVM)         ║
+║                                               ║
+║  Development/Testing   │ Type 2 ✅           ║
+║  (local machine)       │ (VirtualBox)        ║
+║                                               ║
+║  Cloud IaaS            │ Type 1 ✅           ║
+║  (customer VMs)        │ (KVM, Xen)          ║
+║                                               ║
+║  Cloud PaaS            │ Containers ✅✅      ║
+║  (applications)        │ (Docker, K8s)       ║
+║                                               ║
+║  Budget-constrained    │ Type 1 ✅           ║
+║  (open-source)         │ (KVM - free!)       ║
+║                                               ║
+╚═══════════════════════════════════════════════╝
+```
+
+### Cloud Computing Summary
+
+| Factor | VM (IaaS) | Container (PaaS) | Winner |
+|--------|-----------|------------------|--------|
+| Startup time | 30-60s | <1s ✅ | Container |
+| Density | 176/server | 1,706/server ✅ | Container |
+| Performance | 95-98% | 99-100% ✅ | Container |
+| Isolation | Strong ✅ | Weak ⚠️ | VM |
+| OS flexibility | Full ✅ | None | VM |
+| Cost | High | Low ✅ | Container |
+| Use case | IaaS ✅ | PaaS ✅ | Both |
+
+### Recommendation Table
+```
+╔═══════════════════════════════════════════════╗
+║            CLOUD USE CASE MATRIX              ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  Use Case       │ Recommended  │ Reason       ║
+║ ════════════════╪══════════════╪════════════  ║
+║                                               ║
+║  IaaS           │ VM ✅        │ Kernel ctrl  ║
+║                 │              │ Isolation    ║
+║                 │              │ OS diversity ║
+║                                               ║
+║  PaaS           │ Container ✅ │ Fast scaling ║
+║                 │              │ Cost (10×)   ║
+║                 │              │ Performance  ║
+║                                               ║
+║  Hybrid         │ Kata/gVisor  │ Best of both ║
+║                 │              │ Container UX ║
+║                 │              │ VM security  ║
+║                                               ║
+╚═══════════════════════════════════════════════╝
+```
+
+---
+
+## 🔗 Tài liệu tham khảo
+
+### Books
+- **Virtualization Essentials** - Matthew Portnoy
+- **Mastering KVM Virtualization** - Humble Devassy Chirammal
+
+### Hypervisors
+- VMware ESXi: https://www.vmware.com/products/esxi
+- KVM: https://www.linux-kvm.org/
+- Xen: https://xenproject.org/
+- VirtualBox: https://www.virtualbox.org/
+
+### Containers
+- Docker: https://docs.docker.com/
+- Kubernetes: https://kubernetes.io/
+- gVisor: https://gvisor.dev/
+- Kata Containers: https://katacontainers.io/
+
+### Papers
+- **Xen and the Art of Virtualization** - Barham et al., 2003
+- **My VM is Lighter (and Safer) than your Container** - Manco et al., 2017
+
+---
+
+## 🧭 Navigation
+
+**[⬅️ Câu 4: Virtualization](./cau-4-virtualization.md)** | **[📚 Quay lại Chương 3](./README.md)** | **[🏠 Trang chủ](../README.md)**
+
+---
+
+*Cập nhật lần cuối: 11/12/2025*
